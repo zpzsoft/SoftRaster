@@ -296,6 +296,17 @@ public:
 	{
 		return acos(Dot(vecA, vecB) / (vecA.Length() * vecB.Length()));
 	}
+
+	static float Clamp(float value, float min = 0, float max = 1)
+	{
+		return max(min, min(value, max));
+	}
+
+
+	static float Interpolate(float min, float max, float gradient)
+	{
+		return min + (max - min) * Clamp(gradient);
+	}
 };
 
 class Transform
@@ -558,6 +569,7 @@ private:
 	}
 
 	//MinY in Vector4.x, MaxY in Vector4.y;
+	//https://www.davrous.com/2013/06/21/tutorial-part-4-learning-how-to-write-a-3d-software-engine-in-c-ts-or-js-rasterization-z-buffering/
 	bool ScanLineInX(const Vector4& point1, const Vector4& point2, const Vector4& point3, int x, Vector4& scanStart, Vector4& scanEnd)
 	{
 		int minY = INT_MAX, maxY = INT_MIN;
@@ -575,13 +587,13 @@ private:
 			minY = min(minY, yLine12);
 			maxY = max(maxY, yLine12);
 		}
-
+		
 		if (min(point2.x, point3.x) <= x && x <= max(point2.x, point3.x))
 		{
 			minY = min(minY, yLine23);
 			maxY = max(maxY, yLine23);
 		}
-
+		
 		if (min(point3.x, point1.x) <= x && x <= max(point3.x, point1.x))
 		{
 			minY = min(minY, yLine31);
