@@ -423,7 +423,7 @@ public:
 		mBuf = new BYTE[mWidth * mHeight * PIX_BITS / 8];
 		memset(mBuf, 45, mWidth * mHeight * PIX_BITS / 8);
 		mZBuf = new float[mWidth * mHeight];
-		memset(mZBuf, 0, mWidth*mHeight);
+		for (int i = 0; i < mWidth*mHeight; i++) mZBuf[i] = (float)INT_MAX;
 
 		mBitmapInfo = new BITMAPINFO();
 		ZeroMemory(mBitmapInfo, sizeof(BITMAPINFO));
@@ -482,7 +482,7 @@ public:
 		{
 		case DRAW_POINT:
 			for (int i = 0; i < screenPoints.size(); i++)
-				SetPiexel(screenPoints[i].x, screenPoints[i].y, screenColors[i]);
+				;// SetPiexel(screenPoints[i].x, screenPoints[i].y, screenColors[i]);
 			break;
 		case DRAW_LINE:
 			for (int i = 0; i < screenPoints.size(); i++)
@@ -509,34 +509,40 @@ public:
 		SetDIBits(mScreenHDC, mCompatibleBitmap, 0, mHeight, mBuf, mBitmapInfo, DIB_RGB_COLORS);
 		BitBlt(mScreenHDC, -1, -1, mWidth, mHeight, mCompatibleDC, 0, 0, SRCCOPY);
 		memset(mBuf, 45, mWidth * mHeight * PIX_BITS / 8);
-		memset(mZBuf, 0, mWidth * mHeight);
+		for (int i = 0; i < mWidth*mHeight; i++) mZBuf[i] = (float)INT_MAX;
 	}
 
 private:
-	void SetPiexel(int x, int y, const Color& color)
+	void SetPiexel(int x, int y, float z, const Color& color)
 	{
 		if (NULL == mBuf) return;
 		if (x < 0 || y < 0) return;
 		if (y * mWidth * 3 + x * 3 + 3 > mWidth * mHeight * PIX_BITS / 8) return;
 
-		mBuf[y * mWidth * 3 + x * 3 + 1] = color.g;
-		mBuf[y * mWidth * 3 + x * 3 + 2] = color.r;
-		mBuf[y * mWidth * 3 + x * 3 + 3] = color.b;
+		if (z < mZBuf[y * mWidth + x])
+		{
+			mZBuf[y * mWidth + x] = z;
+			mBuf[y * mWidth * 3 + x * 3 + 1] = color.g;
+			mBuf[y * mWidth * 3 + x * 3 + 2] = color.r;
+			mBuf[y * mWidth * 3 + x * 3 + 3] = color.b;
+		}
 	}
 
 	void DrawLine(Vector4 start, Vector4 end, Color color)
 	{
 		if (start.x == end.x && start.y == end.y)
 		{
-			SetPiexel(start.x, start.y, color);
+			SetPiexel(start.x, start.y, start.z, color);
 		}
 		else if (start.x == end.x)
 		{
-			for (int y = min(start.y, end.y); y < max(start.y, end.y); y++) SetPiexel(start.x, y, color);
+			for (int y = min(start.y, end.y); y < max(start.y, end.y); y++) 
+				SetPiexel(start.x, y, Vector4::Interpolate(start.z, end.z, (y - start.y)/(end.y-start.y)), color);
 		}
 		else if (start.y == end.y)
 		{
-			for (int x = min(start.x, end.x); x < max(start.x, end.x); x++) SetPiexel(x, start.y, color);
+			for (int x = min(start.x, end.x); x < max(start.x, end.x); x++) 
+				SetPiexel(x, start.y, Vector4::Interpolate(start.z, end.z, (x - start.x) / (end.x - start.x)), color);
 		}
 		else
 		{
@@ -548,9 +554,9 @@ private:
 			for (int val = minValue; val < maxValue; val++)
 			{
 				if (goX)
-					SetPiexel(val, slope * (val - start.x) + start.y, color);
+					SetPiexel(val, slope * (val - start.x) + start.y, Vector4::Interpolate(start.z, end.z,(val-start.x)/(end.x-start.x)),color);
 				else
-					SetPiexel((val - start.y)/slope + start.x, val, color);
+					SetPiexel((val - start.y)/slope + start.x, val, Vector4::Interpolate(start.z, end.z, (val-start.y)/(end.y - start.y)), color);
 			}
 		}
 	}
@@ -567,11 +573,46 @@ private:
 				DrawLine(startScan, endScan, color);
 		}
 	}
+	
+	Vector4 OnLine(Vector4& start, Vector4& end, int x)
+	{
+		Vector4 point(0, 0, 0, -1);
+		if (x < min(start.x, end.x) || x > max(start.x, end.x)) return point;
+		if (start.x == end.x == x) return point;
+
+		Vector4 leftPoint = start, rightPoint = end;
+
+		if (leftPoint.x > rightPoint.x)
+		{
+			leftPoint = end;
+			rightPoint = start;
+		}
+		float slope = (leftPoint.y - rightPoint.y) / (leftPoint.x - rightPoint.x);
+
+		point.x = x;
+		point.y = slope * (x - rightPoint.x) + rightPoint.y;
+		point.z = Vector4::Interpolate(leftPoint.z, rightPoint.z, (x - leftPoint.x)/(rightPoint.x - leftPoint.x));
+		point.w = 1;
+
+		return point;
+	}
 
 	//MinY in Vector4.x, MaxY in Vector4.y;
 	//https://www.davrous.com/2013/06/21/tutorial-part-4-learning-how-to-write-a-3d-software-engine-in-c-ts-or-js-rasterization-z-buffering/
-	bool ScanLineInX(const Vector4& point1, const Vector4& point2, const Vector4& point3, int x, Vector4& scanStart, Vector4& scanEnd)
+	bool ScanLineInX(Vector4& point1, Vector4& point2, Vector4& point3, int x, Vector4& scanStart, Vector4& scanEnd)
 	{
+		if (x < min(point1.x, min(point2.x, point3.x)) || x > max(point1.x, max(point2.x, point3.x))) return  false;
+		Vector4 line1Pt = OnLine(point1, point2, x);
+		Vector4 line2Pt = OnLine(point2, point3, x);
+		Vector4 line3Pt = OnLine(point3, point1, x);
+
+		if (line1Pt.w < 0) { scanStart = line2Pt; scanEnd = line3Pt; }
+		else if (line2Pt.w < 0) { scanStart = line3Pt; scanEnd = line1Pt; }
+		else if (line3Pt.w < 0) { scanStart = line1Pt; scanEnd = line2Pt; }
+		
+		return true;
+
+		/*
 		int minY = INT_MAX, maxY = INT_MIN;
 
 		float slopeLine12 = point2.x == point1.x ? 0 : (point2.y - point1.y) / (point2.x - point1.x);
@@ -587,13 +628,13 @@ private:
 			minY = min(minY, yLine12);
 			maxY = max(maxY, yLine12);
 		}
-		
+
 		if (min(point2.x, point3.x) <= x && x <= max(point2.x, point3.x))
 		{
 			minY = min(minY, yLine23);
 			maxY = max(maxY, yLine23);
 		}
-		
+
 		if (min(point3.x, point1.x) <= x && x <= max(point3.x, point1.x))
 		{
 			minY = min(minY, yLine31);
@@ -610,7 +651,7 @@ private:
 			return true;
 		}
 
-		return false;
+		return false;*/
 	}
 };
 #pragma endregion
