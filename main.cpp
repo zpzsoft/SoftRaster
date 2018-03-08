@@ -5,6 +5,7 @@
 *					2018-02-14 => 初步把想象中的代码实现完, 等待调试.
 *					2018-02-22 => MVP矩阵计算调试通过, 绘制基本的点和直线.
 *					2018-02-23 => 实现了ScanLine绘制出完整的三角形面积.
+*					2018-02-27 => 实现了zbuffer的支持.
 *
 * Author        :	Ryan Zheng
 * Detail        :	在win32窗体下实现简单的软件光栅化渲染器.√
@@ -13,11 +14,12 @@
 *				3,	实现向量, 矩阵的定义及运算支持(向量的运算的封装).√
 *				4,	绘制支线函数的实现.√
 *				5,	绘制三角形面积的实现.√
-*				6,	深度换冲和裁剪的实现.×
-*				7,	绘制立方体×
-*				8,	加载纹理×
+*				6,	zbuffer实现和绘制立方体.√
+*				7,	空间裁剪.×
+*				8,	纹理映射×
 *				9,	简单光照×
 * Quote			:
+				1, Perspective Texture Mapping : http://chrishecker.com/Miscellaneous_Technical_Articles
 *
 * ----------------------------------------------------------------------------------------------------------------- */
 #include <windows.h>
@@ -97,92 +99,41 @@ public:
 
 	void Translate(float dX, float dY, float dZ)
 	{
-		mm[3][0] = dX;
-		mm[3][1] = dY;
-		mm[3][2] = dZ;
+		mm[3][0] += dX;
+		mm[3][1] += dY;
+		mm[3][2] += dZ;
 	}
 
 	/* usually in this order: first Y, then Z, then X(but not necessarily)
 	https://msdn.microsoft.com/en-us/library/windows/desktop/bb206269(v=vs.85).aspx */
 	void Rotate(float xAngle, float yAngle, float zAngle)
 	{
-		//Rotate y angle.
-		float _00 = mm[0][0] * cos(yAngle) - mm[2][0] * sin(yAngle);
-		float _01 = mm[0][1] * cos(yAngle) - mm[2][1] * sin(yAngle);
-		float _02 = mm[0][2] * cos(yAngle) - mm[2][2] * sin(yAngle);
-		float _03 = mm[0][3] * cos(yAngle) - mm[2][3] * sin(yAngle);
+		Matrix4 mat;
 
-		float _10 = mm[1][0];
-		float _11 = mm[1][1];
-		float _12 = mm[1][2];
-		float _13 = mm[1][3];
+		//rotate Y
+		mat.SetRow(0, mm[0][0] * cos(yAngle) + mm[0][2]* sin(yAngle), mm[0][1], -mm[0][0]*sin(yAngle) + mm[0][2]*cos(yAngle), mm[0][3]);
+		mat.SetRow(1, mm[1][0] * cos(yAngle) + mm[1][2] * sin(yAngle), mm[1][1], -mm[0][0] * sin(yAngle) + mm[1][2] * cos(yAngle), mm[1][3]);
+		mat.SetRow(2, mm[2][0] * cos(yAngle) + mm[2][2] * sin(yAngle), mm[2][1], -mm[0][0] * sin(yAngle) + mm[2][2] * cos(yAngle), mm[2][3]);
+		mat.SetRow(3, mm[3][0] * cos(yAngle) + mm[3][2] * sin(yAngle), mm[3][1], -mm[0][0] * sin(yAngle) + mm[3][2] * cos(yAngle), mm[3][3]);
+		*this = mat; 
+		mat.Identity();
 
-		float _20 = mm[2][0] * sin(yAngle) + mm[2][0] * cos(yAngle);
-		float _21 = mm[2][1] * sin(yAngle) + mm[2][1] * cos(yAngle);
-		float _22 = mm[2][2] * sin(yAngle) + mm[2][2] * cos(yAngle);
-		float _23 = mm[2][3] * sin(yAngle) + mm[2][3] * cos(yAngle);
+		//rotate Z
+		mat.SetRow(0, mm[0][0] * cos(zAngle) - mm[0][1]*sin(zAngle), mm[0][0]*sin(zAngle) + mm[0][1]*cos(zAngle), mm[0][2], mm[0][3]);
+		mat.SetRow(1, mm[1][0] * cos(zAngle) - mm[1][1] * sin(zAngle), mm[1][0] * sin(zAngle) + mm[1][1] * cos(zAngle), mm[1][2], mm[1][3]);
+		mat.SetRow(2, mm[2][0] * cos(zAngle) - mm[2][1] * sin(zAngle), mm[2][0] * sin(zAngle) + mm[2][1] * cos(zAngle), mm[2][2], mm[2][3]);
+		mat.SetRow(3, mm[3][0] * cos(zAngle) - mm[3][1] * sin(zAngle), mm[3][0] * sin(zAngle) + mm[3][1] * cos(zAngle), mm[3][2], mm[3][3]);
+		*this = mat;
+		mat.Identity();
 
-		float _30 = mm[3][0];
-		float _31 = mm[3][1];
-		float _32 = mm[3][2];
-		float _33 = mm[3][3];
+		//rotate X
+		mat.SetRow(0, mm[0][0], mm[0][1] * cos(xAngle) - mm[0][2] * sin(xAngle), mm[0][1] * sin(xAngle) + mm[0][2] * cos(xAngle), mm[0][3]);
+		mat.SetRow(1, mm[1][0], mm[1][1] * cos(xAngle) - mm[1][2] * sin(xAngle), mm[1][1] * sin(xAngle) + mm[1][2] * cos(xAngle), mm[1][3]);
+		mat.SetRow(2, mm[2][0], mm[2][1] * cos(xAngle) - mm[2][2] * sin(xAngle), mm[2][1] * sin(xAngle) + mm[2][2] * cos(xAngle), mm[2][3]);
+		mat.SetRow(3, mm[3][0], mm[3][1] * cos(xAngle) - mm[3][2] * sin(xAngle), mm[3][1] * sin(xAngle) + mm[3][2] * cos(xAngle), mm[3][3]);
+		*this = mat;
+		mat.Identity();
 
-		SetRow(0, _00, _01, _02, _03);
-		SetRow(1, _10, _11, _12, _03);
-		SetRow(2, _20, _21, _22, _23);
-		SetRow(3, _30, _31, _32, _33);
-
-		//Rotate z angle.
-		_00 = mm[0][0] * cos(zAngle) + mm[1][0] * sin(zAngle);
-		_01 = mm[0][1] * cos(zAngle) + mm[1][1] * sin(zAngle);
-		_02 = mm[0][2] * cos(zAngle) + mm[1][2] * sin(zAngle);
-		_03 = mm[0][3] * cos(zAngle) + mm[1][3] * sin(zAngle);
-
-		_10 = -mm[0][0] * sin(yAngle) + mm[1][0] * cos(yAngle);
-		_11 = -mm[0][1] * sin(yAngle) + mm[1][1] * cos(yAngle);
-		_12 = -mm[0][2] * sin(yAngle) + mm[1][2] * cos(yAngle);
-		_13 = -mm[0][3] * sin(yAngle) + mm[1][3] * cos(yAngle);
-
-		_20 = mm[2][0];
-		_21 = mm[2][1];
-		_22 = mm[2][2];
-		_23 = mm[2][3];
-
-		_30 = mm[3][0];
-		_31 = mm[3][1];
-		_32 = mm[3][1];
-		_33 = mm[3][2];
-
-		SetRow(0, _00, _01, _02, _03);
-		SetRow(1, _10, _11, _12, _03);
-		SetRow(2, _20, _21, _22, _23);
-		SetRow(3, _30, _31, _32, _33);
-
-		//Rotate x angle.
-		_00 = mm[0][0];
-		_01 = mm[0][1];
-		_02 = mm[0][2];
-		_03 = mm[0][3];
-
-		_10 = mm[1][0] * cos(xAngle) + mm[2][0] * sin(xAngle);
-		_11 = mm[1][1] * cos(xAngle) + mm[2][1] * sin(xAngle);
-		_12 = mm[1][2] * cos(xAngle) + mm[2][2] * sin(xAngle);
-		_13 = mm[1][3] * cos(xAngle) + mm[2][3] * sin(xAngle);
-
-		_20 = -mm[1][0] * sin(xAngle) + mm[2][0] * cos(xAngle);
-		_21 = -mm[1][1] * sin(xAngle) + mm[2][1] * cos(xAngle);
-		_22 = -mm[1][2] * sin(xAngle) + mm[2][2] * cos(xAngle);
-		_23 = -mm[1][3] * sin(xAngle) + mm[2][3] * cos(xAngle);
-
-		_30 = mm[3][0];
-		_31 = mm[3][1];
-		_32 = mm[3][2];
-		_33 = mm[3][3];
-
-		SetRow(0, _00, _01, _02, _03);
-		SetRow(1, _10, _11, _12, _03);
-		SetRow(2, _20, _21, _22, _23);
-		SetRow(3, _30, _31, _32, _33);
 	}
 
 	void Scale(float sX, float sY, float sZ)
@@ -296,12 +247,15 @@ public:
 	{
 		return acos(Dot(vecA, vecB) / (vecA.Length() * vecB.Length()));
 	}
+};
 
+class Math
+{
+public:
 	static float Clamp(float value, float min = 0, float max = 1)
 	{
 		return max(min, min(value, max));
 	}
-
 
 	static float Interpolate(float min, float max, float gradient)
 	{
@@ -448,12 +402,25 @@ public:
 	Vector4 GetScreenPos(Transform& transform, Vector4& worldPos)
 	{
 		Vector4 pos = worldPos * transform.WorldViewProjection();
+		bool inClipping = CheckInclipping(pos);
 		pos.x = (pos.x /pos.w + 1)*mWidth/2;
 		pos.y = (1 - pos.y / pos.w)*mHeight/2;
 		pos.z = pos.z / pos.w;
-		pos.w = 1.0f;
+		pos.w = inClipping ? 1.0f : -1.0f;
 
 		return pos;
+	}
+
+	bool CheckInclipping(Vector4 pos)
+	{
+		if (pos.z < 0) return false;
+		if (pos.z > pos.w) return false;
+		if (pos.x < -pos.w) return false;
+		if (pos.x > pos.w) return false;
+		if (pos.y < -pos.w) return false;
+		if (pos.y > pos.w) return false;
+
+		return true;
 	}
 
 	void DrawArrays(Transform& transform)
@@ -482,16 +449,29 @@ public:
 		{
 		case DRAW_POINT:
 			for (int i = 0; i < screenPoints.size(); i++)
-				;// SetPiexel(screenPoints[i].x, screenPoints[i].y, screenColors[i]);
+			{
+				if (screenPoints[i].w < 0) continue;;
+				SetPiexel(screenPoints[i].x, screenPoints[i].y, screenPoints[i].z, screenColors[i]);
+			}
 			break;
 		case DRAW_LINE:
 			for (int i = 0; i < screenPoints.size(); i++)
+			{
+				if (screenPoints[i].w < 0) continue;
+				if (screenPoints[(i - 1 + screenPoints.size()) % screenPoints.size()].w < 0) continue;
 				DrawLine(screenPoints[(i - 1 + screenPoints.size()) % screenPoints.size()], screenPoints[i], screenColors[i]);
+			}
 			break;
 		case DRAW_TRIANGLE:
 		{
 			for (int i = 0; i < screenPoints.size() / 3; i++)
+			{
+				if (screenPoints[i * 3].w < 0) continue;
+				if (screenPoints[i * 3 + 1].w < 0) continue;
+				if (screenPoints[i * 3 + 2].w < 0) continue;
+
 				DrawArea(screenPoints[i * 3], screenPoints[i * 3 + 1], screenPoints[i * 3 + 2], screenColors[i * 3]);
+			}
 			break;
 		}
 		default:
@@ -537,12 +517,12 @@ private:
 		else if (start.x == end.x)
 		{
 			for (int y = min(start.y, end.y); y < max(start.y, end.y); y++) 
-				SetPiexel(start.x, y, Vector4::Interpolate(start.z, end.z, (y - start.y)/(end.y-start.y)), color);
+				SetPiexel(start.x, y, Math::Interpolate(start.z, end.z, (y - start.y)/(end.y-start.y)), color);
 		}
 		else if (start.y == end.y)
 		{
 			for (int x = min(start.x, end.x); x < max(start.x, end.x); x++) 
-				SetPiexel(x, start.y, Vector4::Interpolate(start.z, end.z, (x - start.x) / (end.x - start.x)), color);
+				SetPiexel(x, start.y, Math::Interpolate(start.z, end.z, (x - start.x) / (end.x - start.x)), color);
 		}
 		else
 		{
@@ -554,9 +534,9 @@ private:
 			for (int val = minValue; val < maxValue; val++)
 			{
 				if (goX)
-					SetPiexel(val, slope * (val - start.x) + start.y, Vector4::Interpolate(start.z, end.z,(val-start.x)/(end.x-start.x)),color);
+					SetPiexel(val, slope * (val - start.x) + start.y, Math::Interpolate(start.z, end.z, (val - start.x) / (end.x - start.x)), color);
 				else
-					SetPiexel((val - start.y)/slope + start.x, val, Vector4::Interpolate(start.z, end.z, (val-start.y)/(end.y - start.y)), color);
+					SetPiexel((val - start.y) / slope + start.x, val, Math::Interpolate(start.z, end.z, (val - start.y) / (end.y - start.y)), color);
 			}
 		}
 	}
@@ -591,7 +571,7 @@ private:
 
 		point.x = x;
 		point.y = slope * (x - rightPoint.x) + rightPoint.y;
-		point.z = Vector4::Interpolate(leftPoint.z, rightPoint.z, (x - leftPoint.x)/(rightPoint.x - leftPoint.x));
+		point.z = Math::Interpolate(leftPoint.z, rightPoint.z, (x - leftPoint.x) / (rightPoint.x - leftPoint.x));
 		point.w = 1;
 
 		return point;
@@ -656,7 +636,9 @@ private:
 };
 #pragma endregion
 
-static float xDelta = 0, yDelta = 0, zDelta = 0;
+#pragma region Init Data
+static float xMoveDelta = 0, yMoveDelta = 0, zMoveDelta = 0;
+static float xRotateDelta = 0, yRotateDelta = 0, zRotateDelta = 0;
 static Device* device = NULL;
 static Transform transform;
 static float verticeArray[] =
@@ -680,6 +662,7 @@ static int indiceArray[] =
 	2, 6, 7, 2, 7, 3,
 	3, 7, 4, 3, 4, 0
 };
+#pragma endregion
 
 LRESULT CALLBACK WndProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam)
 {
@@ -692,21 +675,40 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam)
 	{
 		break;
 	}
+	case WM_CHAR:
+	{
+		char keyCode = (wParam);
+		switch (keyCode)
+		{
+		case 'w':
+			zMoveDelta += 0.1f;
+		case 'a':
+			yMoveDelta += 0.1f;
+			break;
+		case 's':
+			zMoveDelta -= 0.1f;
+		case 'd':
+			yMoveDelta -= 0.1f;
+			break;
+		default:
+			break;
+		}
+	}
 	case WM_KEYDOWN:
 	{
 		switch (wParam)
 		{
 		case VK_LEFT:
-			yDelta += 0.1f;
+			xRotateDelta += 0.05f;
 			break;
 		case VK_RIGHT:
-			yDelta -= 0.1f;
+			xRotateDelta -= 0.05f;
 			break;
 		case VK_UP:
-			zDelta += 0.1f;
+			zRotateDelta += 0.05f;
 			break;
 		case VK_DOWN:
-			zDelta -= 0.1f;
+			zRotateDelta -= 0.05f;
 			break;
 		case VK_ESCAPE:
 		{
@@ -767,7 +769,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PSTR sZCmdLine,
 
 	device = new Device(hwnd);
 	transform.type = DRAW_TRIANGLE;
-	worldMatrix4.Translate(0.1f, 0, 0);
+	//worldMatrix4.Rotate(0.2f, 0, 0.2f);
 	transform.worldMatrix = worldMatrix4;
 	transform.viewMatrix = viewMatrix4;
 	transform.projectionMatrix = projectionMatrix4;
@@ -779,9 +781,12 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PSTR sZCmdLine,
 		TranslateMessage(&msg);
 		DispatchMessage(&msg);
 
-		transform.worldMatrix.Translate(xDelta, yDelta, zDelta);
+		transform.worldMatrix.Translate(xMoveDelta, yMoveDelta, zMoveDelta);
+		transform.worldMatrix.Rotate(xRotateDelta, yRotateDelta, zRotateDelta);
 		device->DrawArrays(transform);
 		device->Paint();
+		xMoveDelta = yMoveDelta = zMoveDelta = 0;
+		xRotateDelta = yRotateDelta = zRotateDelta = 0;
 	}
 
 	return 0;
