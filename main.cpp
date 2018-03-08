@@ -6,6 +6,7 @@
 *					2018-02-22 => MVP矩阵计算调试通过, 绘制基本的点和直线.
 *					2018-02-23 => 实现了ScanLine绘制出完整的三角形面积.
 *					2018-02-27 => 实现了zbuffer的支持.
+*					2018-03-07 => 实现了简单裁剪及纹理映射.
 *
 * Author        :	Ryan Zheng
 * Detail        :	在win32窗体下实现简单的软件光栅化渲染器.√
@@ -15,11 +16,13 @@
 *				4,	绘制支线函数的实现.√
 *				5,	绘制三角形面积的实现.√
 *				6,	zbuffer实现和绘制立方体.√
-*				7,	空间裁剪.×
-*				8,	纹理映射×
+*				7,	空间裁剪.√
+*				8,	纹理映射.√
 *				9,	简单光照×
 * Quote			:
 				1, Perspective Texture Mapping : http://chrishecker.com/Miscellaneous_Technical_Articles
+				2, About clipping1 : https://fgiesen.wordpress.com/2011/07/05/a-trip-through-the-graphics-pipeline-2011-part-5/
+				3, About clipping2 : http://gad.qq.com/article/detail/35738
 *
 * ----------------------------------------------------------------------------------------------------------------- */
 #include <windows.h>
@@ -166,7 +169,7 @@ public:
 class Vector4
 {
 public:
-	float x, y, z, w;
+	float x, y, z, w, u, v;
 public:
 	Vector4(float _x = 0, float _y = 0, float _z = 0, float _w = 1.0f) { x = _x; y = _y; z = _z; w = _w; }
 
@@ -246,6 +249,17 @@ public:
 	static float Angle(Vector4& vecA, Vector4& vecB)
 	{
 		return acos(Dot(vecA, vecB) / (vecA.Length() * vecB.Length()));
+	}
+};
+
+class Rect
+{
+public:
+	float _x1, _y1, _x2, _y2;
+	Rect(float x1 = 0 , float y1 = 0, float x2 = 0, float y2 = 0) { _x1 = x1; _y1 = y1; _x2 = x2; _y2 = y2; }
+	bool InRegion(float x, float y)
+	{
+		return x >= _x1 && x <= _x2 && y >= _y1 && y >= _y2;
 	}
 };
 
@@ -360,8 +374,11 @@ class Device
 private:
 	int mWidth;
 	int mHeight;
+	int mTextureWidth;
+	int mTextureHeight;
 	BYTE* mBuf = NULL;
 	float* mZBuf = NULL;
+	unsigned int* mTexture = NULL;
 	BITMAPINFO* mBitmapInfo = NULL;
 	HDC mScreenHDC;
 	HDC mCompatibleDC;
@@ -426,23 +443,19 @@ public:
 	void DrawArrays(Transform& transform)
 	{
 		std::vector<Vector4> screenPoints;
-		std::vector<Color> screenColors;
 		for (int i = 0; i < transform.indiceList.size(); i++)
 		{
 			Vector4 worldPos;
-			Color color = Color::Black();
 			int vericeIndex = transform.indiceList[i];
 
-			worldPos.x = transform.verticeList[vericeIndex * 6];
-			worldPos.y = transform.verticeList[vericeIndex * 6 + 1];
-			worldPos.z = transform.verticeList[vericeIndex * 6 + 2];
+			worldPos.x = transform.verticeList[vericeIndex * 5];
+			worldPos.y = transform.verticeList[vericeIndex * 5 + 1];
+			worldPos.z = transform.verticeList[vericeIndex * 5 + 2];
 			worldPos = GetScreenPos(transform, worldPos);
-			color.r = transform.verticeList[vericeIndex * 6 + 3] * 255;
-			color.g = transform.verticeList[vericeIndex * 6 + 4] * 255;
-			color.b = transform.verticeList[vericeIndex * 6 + 5] * 255;
+			worldPos.u = transform.verticeList[vericeIndex * 5 + 3];
+			worldPos.v = transform.verticeList[vericeIndex * 5 + 4];
 
 			screenPoints.push_back(worldPos);
-			screenColors.push_back(color);
 		}
 
 		switch (transform.type)
@@ -451,7 +464,7 @@ public:
 			for (int i = 0; i < screenPoints.size(); i++)
 			{
 				if (screenPoints[i].w < 0) continue;;
-				SetPiexel(screenPoints[i].x, screenPoints[i].y, screenPoints[i].z, screenColors[i]);
+				SetPiexel(screenPoints[i].x, screenPoints[i].y, screenPoints[i].z, Color::Black());
 			}
 			break;
 		case DRAW_LINE:
@@ -459,18 +472,19 @@ public:
 			{
 				if (screenPoints[i].w < 0) continue;
 				if (screenPoints[(i - 1 + screenPoints.size()) % screenPoints.size()].w < 0) continue;
-				DrawLine(screenPoints[(i - 1 + screenPoints.size()) % screenPoints.size()], screenPoints[i], screenColors[i]);
+				DrawLine(screenPoints[(i - 1 + screenPoints.size()) % screenPoints.size()], screenPoints[i], Color::Black());
 			}
 			break;
 		case DRAW_TRIANGLE:
 		{
 			for (int i = 0; i < screenPoints.size() / 3; i++)
 			{
+				//裁剪只做简单做丢弃
 				if (screenPoints[i * 3].w < 0) continue;
 				if (screenPoints[i * 3 + 1].w < 0) continue;
 				if (screenPoints[i * 3 + 2].w < 0) continue;
 
-				DrawArea(screenPoints[i * 3], screenPoints[i * 3 + 1], screenPoints[i * 3 + 2], screenColors[i * 3]);
+				DrawArea(screenPoints[i * 3], screenPoints[i * 3 + 1], screenPoints[i * 3 + 2], Color::Black());
 			}
 			break;
 		}
@@ -492,6 +506,29 @@ public:
 		for (int i = 0; i < mWidth*mHeight; i++) mZBuf[i] = (float)INT_MAX;
 	}
 
+	void InitTexture(int width, int height)
+	{
+		mTextureWidth = width;
+		mTextureHeight = height;
+		mTexture = new unsigned int[width * height];
+
+		int i, j;
+		for (j = 0; j < width; j++) {
+			for (i = 0; i < height; i++) {
+				int x = i / 32, y = j / 32;
+				mTexture[j*width + i] = ((x + y) & 1) ? 0xfffff : 0x0fb1ef;
+			}
+		}
+	}
+
+	unsigned int GetTexturePixel(float u, float v)
+	{
+		int xPos = mTextureWidth * u;
+		int yPos = mTextureHeight * v;
+
+		return mTexture[yPos * mTextureWidth + xPos];
+	}
+
 private:
 	void SetPiexel(int x, int y, float z, const Color& color)
 	{
@@ -508,21 +545,44 @@ private:
 		}
 	}
 
-	void DrawLine(Vector4 start, Vector4 end, Color color)
+	void DrawLine(Vector4 start, Vector4 end, Color color, bool readTexture = false)
 	{
+		Color pixelColor = color;
 		if (start.x == end.x && start.y == end.y)
 		{
-			SetPiexel(start.x, start.y, start.z, color);
+			SetPiexel(start.x, start.y, start.z, pixelColor);
 		}
 		else if (start.x == end.x)
 		{
-			for (int y = min(start.y, end.y); y < max(start.y, end.y); y++) 
-				SetPiexel(start.x, y, Math::Interpolate(start.z, end.z, (y - start.y)/(end.y-start.y)), color);
+			for (int y = min(start.y, end.y); y < max(start.y, end.y); y++)
+			{
+				if (readTexture)
+				{
+					float u = Math::Interpolate(start.u, end.u, (y - start.y) / (end.y - start.y));
+					float v = Math::Interpolate(start.v, end.v, (y - start.y) / (end.y - start.y));
+					unsigned int pixel = GetTexturePixel(u, v);
+					pixelColor.r = pixel & 0x1000;
+					pixelColor.g = pixel & 0x0100;
+					pixelColor.b = pixel & 0x0010;
+				}
+				SetPiexel(start.x, y, Math::Interpolate(start.z, end.z, (y - start.y) / (end.y - start.y)), pixelColor);
+			}
 		}
 		else if (start.y == end.y)
 		{
-			for (int x = min(start.x, end.x); x < max(start.x, end.x); x++) 
-				SetPiexel(x, start.y, Math::Interpolate(start.z, end.z, (x - start.x) / (end.x - start.x)), color);
+			for (int x = min(start.x, end.x); x < max(start.x, end.x); x++)
+			{
+				if (readTexture)
+				{
+					float u = Math::Interpolate(start.u, end.u, (x - start.x) / (end.x - start.x));
+					float v = Math::Interpolate(start.v, end.v, (x - start.x) / (end.x - start.x));
+					unsigned int pixel = GetTexturePixel(u, v);
+					pixelColor.r = pixel & 0x1000;
+					pixelColor.g = pixel & 0x0100;
+					pixelColor.b = pixel & 0x0010;
+				}
+				SetPiexel(x, start.y, Math::Interpolate(start.z, end.z, (x - start.x) / (end.x - start.x)), pixelColor);
+			}
 		}
 		else
 		{
@@ -531,12 +591,23 @@ private:
 			int minValue = goX ? min(start.x, end.x) : min(start.y, end.y);
 			int maxValue = goX ? max(start.x, end.x) : max(start.y, end.y);
 			
+			
 			for (int val = minValue; val < maxValue; val++)
 			{
+				if (readTexture)
+				{
+					float u = Math::Interpolate(start.u, end.u, (val - start.x) / (end.x - start.x));
+					float v = Math::Interpolate(start.v, end.v, (val - start.x) / (end.x - start.x));
+					unsigned int pixel = GetTexturePixel(u, v);
+					pixelColor.r = pixel & 0x110000;
+					pixelColor.g = pixel & 0x001100;
+					pixelColor.b = pixel & 0x000011;
+				}
+
 				if (goX)
-					SetPiexel(val, slope * (val - start.x) + start.y, Math::Interpolate(start.z, end.z, (val - start.x) / (end.x - start.x)), color);
+					SetPiexel(val, slope * (val - start.x) + start.y, Math::Interpolate(start.z, end.z, (val - start.x) / (end.x - start.x)), pixelColor);
 				else
-					SetPiexel((val - start.y) / slope + start.x, val, Math::Interpolate(start.z, end.z, (val - start.y) / (end.y - start.y)), color);
+					SetPiexel((val - start.y) / slope + start.x, val, Math::Interpolate(start.z, end.z, (val - start.y) / (end.y - start.y)), pixelColor);
 			}
 		}
 	}
@@ -550,7 +621,7 @@ private:
 		for (int i = minX; i < maxX; i++)
 		{
 			if (ScanLineInX(point1, point2, point3, i, startScan, endScan))
-				DrawLine(startScan, endScan, color);
+				DrawLine(startScan, endScan, color, true);
 		}
 	}
 	
@@ -568,11 +639,13 @@ private:
 			rightPoint = start;
 		}
 		float slope = (leftPoint.y - rightPoint.y) / (leftPoint.x - rightPoint.x);
-
+		float rate = (x - leftPoint.x) / (rightPoint.x - leftPoint.x);
 		point.x = x;
 		point.y = slope * (x - rightPoint.x) + rightPoint.y;
-		point.z = Math::Interpolate(leftPoint.z, rightPoint.z, (x - leftPoint.x) / (rightPoint.x - leftPoint.x));
+		point.z = Math::Interpolate(leftPoint.z, rightPoint.z, rate);
 		point.w = 1;
+		point.u = Math::Interpolate(leftPoint.u, rightPoint.u, rate);
+		point.v = Math::Interpolate(leftPoint.v, rightPoint.v, rate);
 
 		return point;
 	}
@@ -643,14 +716,14 @@ static Device* device = NULL;
 static Transform transform;
 static float verticeArray[] =
 {
-	1, -1, 2, 1, 0, 0,
-	-1, -1, 2, 0, 1, 0,
-	-1, 1, 2, 0, 0, 1,
-	1, 1, 2, 1, 1, 0,
-	1, -1, 0, 1, 0, 1,
-	-1, -1, 0, 0, 1, 1,
-	-1, 1, 0, 0, 0, 0,
-	1, 1, 0, 0.5f, 0.5f, 0.5f,
+	1, -1, 2, 0, 0,
+	-1, -1, 2, 0, 1,
+	-1, 1, 2, 1, 1,
+	1, 1, 2, 1, 0,
+	1, -1, 0, 1, 1,
+	-1, -1, 0, 1, 0,
+	-1, 1, 0, 0, 0,
+	1, 1, 0, 0, 1,
 };
 
 static int indiceArray[] =
@@ -768,8 +841,8 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PSTR sZCmdLine,
 	Matrix4 projectionMatrix4 = camera.Perspective(90 * 3.14159 / 180, (float)SCREEN_WIDTH / SCREEN_HEIGHT, 1, 100);
 
 	device = new Device(hwnd);
+	device->InitTexture(256, 256);
 	transform.type = DRAW_TRIANGLE;
-	//worldMatrix4.Rotate(0.2f, 0, 0.2f);
 	transform.worldMatrix = worldMatrix4;
 	transform.viewMatrix = viewMatrix4;
 	transform.projectionMatrix = projectionMatrix4;
