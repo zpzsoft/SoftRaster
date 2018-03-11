@@ -23,6 +23,10 @@
 				1, Perspective Texture Mapping : http://chrishecker.com/Miscellaneous_Technical_Articles
 				2, About clipping1 : https://fgiesen.wordpress.com/2011/07/05/a-trip-through-the-graphics-pipeline-2011-part-5/
 				3, About clipping2 : http://gad.qq.com/article/detail/35738
+				4, Perspective correctness :
+					https://en.wikipedia.org/wiki/Texture_mapping#Perspective_correctness
+					https://stackoverflow.com/questions/2068134/perspective-correct-texture-mapping-z-distance-calculation-might-be-wrong
+					http://archive.gamedev.net/archive/reference/articles/article331.html
 *
 * ----------------------------------------------------------------------------------------------------------------- */
 #include <windows.h>
@@ -278,7 +282,7 @@ public:
 
 	static float Interpolate3D(float u1, float z1, float u2, float z2, float rate)
 	{
-		return Clamp(((1 - rate)*u1 / z1 + rate*u2 / z2) / ((1 - rate) / u1 + rate / z2), 0, 1);
+		return Clamp(((1 - rate)*u1 / z1 + rate*u2 / z2) / ((1 - rate) / z1 + rate / z2), 0, 1);
 	}
 };
 
@@ -652,12 +656,13 @@ private:
 		if (start.x == end.x == x) return point;
 
 		Vector4 leftPoint = start, rightPoint = end;
-		float slope = (leftPoint.y - rightPoint.y) / (leftPoint.x - rightPoint.x);
+		float ySlope = (leftPoint.y - rightPoint.y) / (leftPoint.x - rightPoint.x);
+		float zSlope = (leftPoint.z - rightPoint.z) / (leftPoint.x - rightPoint.x);
 		float xRate = (x - leftPoint.x) / (rightPoint.x - leftPoint.x);
-		point.x = x;
-		point.y = slope * (x - rightPoint.x) + rightPoint.y;
-		point.z = Math::Interpolate(leftPoint.z, rightPoint.z, xRate);
 		point.w = 1;
+		point.x = x;
+		point.y = ySlope * (x - rightPoint.x) + rightPoint.y;
+		point.z = (leftPoint.z - rightPoint.z) * x / (leftPoint.x - rightPoint.x);
 		point.u = Math::Interpolate3D(leftPoint.u, leftPoint.z, rightPoint.u, rightPoint.z, xRate);
 		point.v = Math::Interpolate3D(leftPoint.v, leftPoint.z, rightPoint.v, rightPoint.z, xRate);
 
@@ -710,12 +715,12 @@ static float verticeArray[] =
 
 static int indiceArray[] =
 {
-	0, 1, 2, 3,		//bottom
-	4, 5, 6, 7,		//top
-	0, 1, 5, 4,		//back
-	3, 2, 6, 7,		//front
+	//0, 1, 2, 3,		//bottom
+	//4, 5, 6, 7,		//top
+	//0, 1, 5, 4,		//back
+	//3, 2, 6, 7,		//front
 	1, 2, 6, 5,		//left
-	0, 3, 7, 4,		//right
+	//0, 3, 7, 4,		//right
 };
 
 #pragma endregion
