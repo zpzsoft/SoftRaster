@@ -536,7 +536,7 @@ public:
 		for (j = 0; j < width; j++) {
 			for (i = 0; i < height; i++) {
 				int x = i / 32, y = j / 32;
-				mTexture[j*width + i] = ((x + y) & 1) ? 0xffffff : 0x0fb1ef;
+				mTexture[j*width + i] = ((x + y) & 1) ? 0xffffff : 0x000000;
 			}
 		}
 	}
@@ -709,11 +709,11 @@ static float verticeArray[] =
 
 static int indiceArray[] =
 {
-	0, 1, 2, 3, 
-	4, 5, 6, 7,
-	0, 1, 5, 4, 
-	3, 2, 6, 7,
-	1, 2, 6, 5,
+	0, 1, 2, 3,
+	//4, 5, 6, 7,
+	//0, 1, 5, 4,
+	//3, 2, 6, 7,
+	//1, 2, 6, 5,
 	0, 3, 7, 4,
 };
 
