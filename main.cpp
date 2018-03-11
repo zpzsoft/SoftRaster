@@ -443,48 +443,68 @@ public:
 	void DrawArrays(Transform& transform)
 	{
 		std::vector<Vector4> screenPoints;
+		std::vector<Vector4> trianglePoints;
 		for (int i = 0; i < transform.indiceList.size(); i++)
 		{
 			Vector4 worldPos;
 			int vericeIndex = transform.indiceList[i];
 
-			worldPos.x = transform.verticeList[vericeIndex * 5];
-			worldPos.y = transform.verticeList[vericeIndex * 5 + 1];
-			worldPos.z = transform.verticeList[vericeIndex * 5 + 2];
+			worldPos.x = transform.verticeList[vericeIndex * 3];
+			worldPos.y = transform.verticeList[vericeIndex * 3 + 1];
+			worldPos.z = transform.verticeList[vericeIndex * 3 + 2];
 			worldPos = GetScreenPos(transform, worldPos);
-			worldPos.u = transform.verticeList[vericeIndex * 5 + 3];
-			worldPos.v = transform.verticeList[vericeIndex * 5 + 4];
 
 			screenPoints.push_back(worldPos);
+		}
+
+		//计算面片的UV.
+		for (int i = 0; i < screenPoints.size()/4; i++)
+		{
+			Vector4 pt1 = screenPoints[i*4];
+			Vector4 pt2 = screenPoints[i*4 + 1];
+			Vector4 pt3 = screenPoints[i*4 + 2];
+			Vector4 pt4 = screenPoints[i*4 + 3];
+
+			pt1.u = 0; pt1.v = 0;
+			pt2.u = 1; pt2.v = 0;
+			pt3.u = 1; pt3.v = 1;
+			pt4.u = 0; pt4.v = 1;
+
+			trianglePoints.push_back(pt1);
+			trianglePoints.push_back(pt2);
+			trianglePoints.push_back(pt3);
+			trianglePoints.push_back(pt1);
+			trianglePoints.push_back(pt3);
+			trianglePoints.push_back(pt4);
 		}
 
 		switch (transform.type)
 		{
 		case DRAW_POINT:
-			for (int i = 0; i < screenPoints.size(); i++)
+			for (int i = 0; i < trianglePoints.size(); i++)
 			{
-				if (screenPoints[i].w < 0) continue;;
-				SetPiexel(screenPoints[i].x, screenPoints[i].y, screenPoints[i].z, Color::Black());
+				if (trianglePoints[i].w < 0) continue;;
+				SetPiexel(trianglePoints[i].x, trianglePoints[i].y, trianglePoints[i].z, Color::Black());
 			}
 			break;
 		case DRAW_LINE:
-			for (int i = 0; i < screenPoints.size(); i++)
+			for (int i = 0; i < trianglePoints.size(); i++)
 			{
-				if (screenPoints[i].w < 0) continue;
-				if (screenPoints[(i - 1 + screenPoints.size()) % screenPoints.size()].w < 0) continue;
-				DrawLine(screenPoints[(i - 1 + screenPoints.size()) % screenPoints.size()], screenPoints[i], Color::Black());
+				if (trianglePoints[i].w < 0) continue;
+				if (trianglePoints[(i - 1 + trianglePoints.size()) % trianglePoints.size()].w < 0) continue;
+				DrawLine(trianglePoints[(i - 1 + trianglePoints.size()) % trianglePoints.size()], trianglePoints[i], Color::Black());
 			}
 			break;
 		case DRAW_TRIANGLE:
 		{
-			for (int i = 0; i < screenPoints.size() / 3; i++)
+			for (int i = 0; i < trianglePoints.size() / 3; i++)
 			{
 				//裁剪只做简单做丢弃
-				if (screenPoints[i * 3].w < 0) continue;
-				if (screenPoints[i * 3 + 1].w < 0) continue;
-				if (screenPoints[i * 3 + 2].w < 0) continue;
+				if (trianglePoints[i * 3].w < 0) continue;
+				if (trianglePoints[i * 3 + 1].w < 0) continue;
+				if (trianglePoints[i * 3 + 2].w < 0) continue;
 
-				DrawArea(screenPoints[i * 3], screenPoints[i * 3 + 1], screenPoints[i * 3 + 2], Color::Black());
+				DrawArea(trianglePoints[i * 3], trianglePoints[i * 3 + 1], trianglePoints[i * 3 + 2], Color::Black());
 			}
 			break;
 		}
@@ -516,17 +536,20 @@ public:
 		for (j = 0; j < width; j++) {
 			for (i = 0; i < height; i++) {
 				int x = i / 32, y = j / 32;
-				mTexture[j*width + i] = ((x + y) & 1) ? 0xfffff : 0x0fb1ef;
+				mTexture[j*width + i] = ((x + y) & 1) ? 0xffffff : 0x0fb1ef;
 			}
 		}
 	}
 
-	unsigned int GetTexturePixel(float u, float v)
+	void GetTexturePixel(float u, float v, Color& outColor)
 	{
 		int xPos = mTextureWidth * u;
 		int yPos = mTextureHeight * v;
 
-		return mTexture[yPos * mTextureWidth + xPos];
+		int value = mTexture[yPos * mTextureWidth + xPos];
+		outColor.b = ((value & 0xf000) >> 12)*255/15;
+		outColor.g = ((value & 0x0f00) >> 8) * 255 / 15;;
+		outColor.r = ((value & 0x00f0) >> 4)*255/15;
 	}
 
 private:
@@ -560,10 +583,7 @@ private:
 				{
 					float u = Math::Interpolate(start.u, end.u, (y - start.y) / (end.y - start.y));
 					float v = Math::Interpolate(start.v, end.v, (y - start.y) / (end.y - start.y));
-					unsigned int pixel = GetTexturePixel(u, v);
-					pixelColor.r = pixel & 0x1000;
-					pixelColor.g = pixel & 0x0100;
-					pixelColor.b = pixel & 0x0010;
+					GetTexturePixel(u, v, pixelColor);
 				}
 				SetPiexel(start.x, y, Math::Interpolate(start.z, end.z, (y - start.y) / (end.y - start.y)), pixelColor);
 			}
@@ -576,10 +596,7 @@ private:
 				{
 					float u = Math::Interpolate(start.u, end.u, (x - start.x) / (end.x - start.x));
 					float v = Math::Interpolate(start.v, end.v, (x - start.x) / (end.x - start.x));
-					unsigned int pixel = GetTexturePixel(u, v);
-					pixelColor.r = pixel & 0x1000;
-					pixelColor.g = pixel & 0x0100;
-					pixelColor.b = pixel & 0x0010;
+					GetTexturePixel(u, v, pixelColor);
 				}
 				SetPiexel(x, start.y, Math::Interpolate(start.z, end.z, (x - start.x) / (end.x - start.x)), pixelColor);
 			}
@@ -598,10 +615,7 @@ private:
 				{
 					float u = Math::Interpolate(start.u, end.u, (val - start.x) / (end.x - start.x));
 					float v = Math::Interpolate(start.v, end.v, (val - start.x) / (end.x - start.x));
-					unsigned int pixel = GetTexturePixel(u, v);
-					pixelColor.r = pixel & 0x110000;
-					pixelColor.g = pixel & 0x001100;
-					pixelColor.b = pixel & 0x000011;
+					GetTexturePixel(u, v, pixelColor);
 				}
 
 				if (goX)
@@ -654,7 +668,9 @@ private:
 	//https://www.davrous.com/2013/06/21/tutorial-part-4-learning-how-to-write-a-3d-software-engine-in-c-ts-or-js-rasterization-z-buffering/
 	bool ScanLineInX(Vector4& point1, Vector4& point2, Vector4& point3, int x, Vector4& scanStart, Vector4& scanEnd)
 	{
-		if (x < min(point1.x, min(point2.x, point3.x)) || x > max(point1.x, max(point2.x, point3.x))) return  false;
+		if (x < min(point1.x, min(point2.x, point3.x)) || x > max(point1.x, max(point2.x, point3.x))) 
+			return  false;
+
 		Vector4 line1Pt = OnLine(point1, point2, x);
 		Vector4 line2Pt = OnLine(point2, point3, x);
 		Vector4 line3Pt = OnLine(point3, point1, x);
@@ -662,49 +678,14 @@ private:
 		if (line1Pt.w < 0) { scanStart = line2Pt; scanEnd = line3Pt; }
 		else if (line2Pt.w < 0) { scanStart = line3Pt; scanEnd = line1Pt; }
 		else if (line3Pt.w < 0) { scanStart = line1Pt; scanEnd = line2Pt; }
-		
-		return true;
-
-		/*
-		int minY = INT_MAX, maxY = INT_MIN;
-
-		float slopeLine12 = point2.x == point1.x ? 0 : (point2.y - point1.y) / (point2.x - point1.x);
-		float slopeLine23 = point3.x == point2.x ? 0 : (point3.y - point2.y) / (point3.x - point2.x);
-		float slopeLine31 = point1.x == point3.x ? 0 : (point1.y - point3.y) / (point1.x - point3.x);
-
-		float yLine12 = slopeLine12 * (x - point1.x) + point1.y;
-		float yLine23 = slopeLine23 * (x - point2.x) + point2.y;
-		float yLine31 = slopeLine31 * (x - point3.x) + point3.y;
-
-		if (min(point1.x, point2.x) <= x && x <= max(point1.x, point2.x))
-		{
-			minY = min(minY, yLine12);
-			maxY = max(maxY, yLine12);
-		}
-
-		if (min(point2.x, point3.x) <= x && x <= max(point2.x, point3.x))
-		{
-			minY = min(minY, yLine23);
-			maxY = max(maxY, yLine23);
-		}
-
-		if (min(point3.x, point1.x) <= x && x <= max(point3.x, point1.x))
-		{
-			minY = min(minY, yLine31);
-			maxY = max(maxY, yLine31);
-		}
-
-		if (minY == INT_MAX || maxY == INT_MIN) return false;
-
-		if (minY >= (int)min(point1.y, min(point2.y, point3.y)) || maxY <= (int)max(point1.y, max(point2.y, point3.y)))
+		else
 		{
 			scanStart.x = scanEnd.x = x;
-			scanStart.y = minY;
-			scanEnd.y = maxY;
-			return true;
+			scanStart.y = min(line1Pt.y, min(line2Pt.y, line3Pt.y));
+			scanEnd.y = max(line1Pt.y, max(line2Pt.y, line3Pt.y));
 		}
-
-		return false;*/
+		
+		return true;
 	}
 };
 #pragma endregion
@@ -716,25 +697,26 @@ static Device* device = NULL;
 static Transform transform;
 static float verticeArray[] =
 {
-	1, -1, 2, 0, 0,
-	-1, -1, 2, 0, 1,
-	-1, 1, 2, 1, 1,
-	1, 1, 2, 1, 0,
-	1, -1, 0, 1, 1,
-	-1, -1, 0, 1, 0,
-	-1, 1, 0, 0, 0,
-	1, 1, 0, 0, 1,
+	0, 0, 0,
+	1, 0, 0,
+	1, 0, 1,
+	0, 0, 1,
+	0, 1, 0,
+	1, 1, 0,
+	1, 1, 1,
+	0, 1, 1,
 };
 
 static int indiceArray[] =
 {
-	0, 1, 2, 0, 2, 3,
-	4, 5, 6, 4, 6, 7,
-	5, 1, 0, 5, 0, 4,
-	1, 5, 6, 1, 6, 2,
-	2, 6, 7, 2, 7, 3,
-	3, 7, 4, 3, 4, 0
+	0, 1, 2, 3, 
+	4, 5, 6, 7,
+	0, 1, 5, 4, 
+	3, 2, 6, 7,
+	1, 2, 6, 5,
+	0, 3, 7, 4,
 };
+
 #pragma endregion
 
 LRESULT CALLBACK WndProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam)
