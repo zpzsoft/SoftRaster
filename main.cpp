@@ -266,14 +266,19 @@ public:
 class Math
 {
 public:
-	static float Clamp(float value, float min = 0, float max = 1)
+	static float Clamp(float value, float minValue = 0, float maxValue = 1)
 	{
-		return max(min, min(value, max));
+		return max(minValue, min(value, maxValue));
 	}
 
-	static float Interpolate(float min, float max, float gradient)
+	static float Interpolate(float minValue, float maxValue, float gradient)
 	{
-		return min + (max - min) * Clamp(gradient);
+		return minValue + (maxValue - minValue) * Clamp(gradient);
+	}
+
+	static float Interpolate3D(float u1, float z1, float u2, float z2, float rate)
+	{
+		return Clamp(((1 - rate)*u1 / z1 + rate*u2 / z2) / ((1 - rate) / u1 + rate / z2), 0, 1);
 	}
 };
 
@@ -500,9 +505,9 @@ public:
 			for (int i = 0; i < trianglePoints.size() / 3; i++)
 			{
 				//裁剪只做简单做丢弃
-				if (trianglePoints[i * 3].w < 0) continue;
-				if (trianglePoints[i * 3 + 1].w < 0) continue;
-				if (trianglePoints[i * 3 + 2].w < 0) continue;
+				//if (trianglePoints[i * 3].w < 0) continue;
+				//if (trianglePoints[i * 3 + 1].w < 0) continue;
+				//if (trianglePoints[i * 3 + 2].w < 0) continue;
 
 				DrawArea(trianglePoints[i * 3], trianglePoints[i * 3 + 1], trianglePoints[i * 3 + 2], Color::Black());
 			}
@@ -581,11 +586,12 @@ private:
 			{
 				if (readTexture)
 				{
-					float u = Math::Interpolate(start.u, end.u, (y - start.y) / (end.y - start.y));
-					float v = Math::Interpolate(start.v, end.v, (y - start.y) / (end.y - start.y));
+					float u = Math::Interpolate3D(start.u, start.z, end.u, end.z, (y - start.y) / (end.y - start.y));
+					float v = Math::Interpolate3D(start.v, start.z, end.v, end.z, (y - start.y) / (end.y - start.y));
 					GetTexturePixel(u, v, pixelColor);
+					SetPiexel(start.x, y, Math::Interpolate(start.z, end.z, (y - start.y) / (end.y - start.y)), pixelColor);
 				}
-				SetPiexel(start.x, y, Math::Interpolate(start.z, end.z, (y - start.y) / (end.y - start.y)), pixelColor);
+				
 			}
 		}
 		else if (start.y == end.y)
@@ -594,8 +600,8 @@ private:
 			{
 				if (readTexture)
 				{
-					float u = Math::Interpolate(start.u, end.u, (x - start.x) / (end.x - start.x));
-					float v = Math::Interpolate(start.v, end.v, (x - start.x) / (end.x - start.x));
+					float u = Math::Interpolate3D(start.u, start.z, end.u, end.z, (x - start.x) / (end.x - start.x));
+					float v = Math::Interpolate3D(start.v, start.z, end.v, end.z, (x - start.x) / (end.x - start.x));
 					GetTexturePixel(u, v, pixelColor);
 				}
 				SetPiexel(x, start.y, Math::Interpolate(start.z, end.z, (x - start.x) / (end.x - start.x)), pixelColor);
@@ -613,8 +619,8 @@ private:
 			{
 				if (readTexture)
 				{
-					float u = Math::Interpolate(start.u, end.u, (val - start.x) / (end.x - start.x));
-					float v = Math::Interpolate(start.v, end.v, (val - start.x) / (end.x - start.x));
+					float u = Math::Interpolate3D(start.u, start.z, end.u, end.z, (val - start.x) / (end.x - start.x));
+					float v = Math::Interpolate3D(start.v, start.z, end.v, end.z, (val - start.x) / (end.x - start.x));
 					GetTexturePixel(u, v, pixelColor);
 				}
 
@@ -646,20 +652,14 @@ private:
 		if (start.x == end.x == x) return point;
 
 		Vector4 leftPoint = start, rightPoint = end;
-
-		if (leftPoint.x > rightPoint.x)
-		{
-			leftPoint = end;
-			rightPoint = start;
-		}
 		float slope = (leftPoint.y - rightPoint.y) / (leftPoint.x - rightPoint.x);
-		float rate = (x - leftPoint.x) / (rightPoint.x - leftPoint.x);
+		float xRate = (x - leftPoint.x) / (rightPoint.x - leftPoint.x);
 		point.x = x;
 		point.y = slope * (x - rightPoint.x) + rightPoint.y;
-		point.z = Math::Interpolate(leftPoint.z, rightPoint.z, rate);
+		point.z = Math::Interpolate(leftPoint.z, rightPoint.z, xRate);
 		point.w = 1;
-		point.u = Math::Interpolate(leftPoint.u, rightPoint.u, rate);
-		point.v = Math::Interpolate(leftPoint.v, rightPoint.v, rate);
+		point.u = Math::Interpolate3D(leftPoint.u, leftPoint.z, rightPoint.u, rightPoint.z, xRate);
+		point.v = Math::Interpolate3D(leftPoint.v, leftPoint.z, rightPoint.v, rightPoint.z, xRate);
 
 		return point;
 	}
@@ -695,26 +695,27 @@ static float xMoveDelta = 0, yMoveDelta = 0, zMoveDelta = 0;
 static float xRotateDelta = 0, yRotateDelta = 0, zRotateDelta = 0;
 static Device* device = NULL;
 static Transform transform;
+static float delta = 1.5f;
 static float verticeArray[] =
 {
 	0, 0, 0,
-	1, 0, 0,
-	1, 0, 1,
-	0, 0, 1,
-	0, 1, 0,
-	1, 1, 0,
-	1, 1, 1,
-	0, 1, 1,
+	delta, 0, 0,
+	delta, 0, delta,
+	0, 0, delta,
+	0, delta, 0,
+	delta, delta, 0,
+	delta, delta, delta,
+	0, delta, delta,
 };
 
 static int indiceArray[] =
 {
-	0, 1, 2, 3,
-	//4, 5, 6, 7,
-	//0, 1, 5, 4,
-	//3, 2, 6, 7,
-	//1, 2, 6, 5,
-	0, 3, 7, 4,
+	0, 1, 2, 3,		//bottom
+	4, 5, 6, 7,		//top
+	0, 1, 5, 4,		//back
+	3, 2, 6, 7,		//front
+	1, 2, 6, 5,		//left
+	0, 3, 7, 4,		//right
 };
 
 #pragma endregion
@@ -754,16 +755,16 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam)
 		switch (wParam)
 		{
 		case VK_LEFT:
-			xRotateDelta += 0.05f;
+			zRotateDelta -= 0.05f;
 			break;
 		case VK_RIGHT:
-			xRotateDelta -= 0.05f;
-			break;
-		case VK_UP:
 			zRotateDelta += 0.05f;
 			break;
+		case VK_UP:
+			xRotateDelta -= 0.05f;			
+			break;
 		case VK_DOWN:
-			zRotateDelta -= 0.05f;
+			xRotateDelta += 0.05f;			
 			break;
 		case VK_ESCAPE:
 		{
@@ -819,7 +820,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PSTR sZCmdLine,
 	//Init Camera
 	Camera camera;
 	Matrix4 worldMatrix4;
-	Matrix4 viewMatrix4 = camera.LookAt(Vector4::New(3.5, 0, 0), Vector4::New(0, 0, 0), Vector4::New(0, 0, 1));
+	Matrix4 viewMatrix4 = camera.LookAt(Vector4::New(0, 0, 3.5f), Vector4::New(0, 0, 0), Vector4::New(0, 1, 0));
 	Matrix4 projectionMatrix4 = camera.Perspective(90 * 3.14159 / 180, (float)SCREEN_WIDTH / SCREEN_HEIGHT, 1, 100);
 
 	device = new Device(hwnd);
