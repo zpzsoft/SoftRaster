@@ -432,7 +432,7 @@ public:
 		pos.x = (pos.x /pos.w + 1)*mWidth/2;
 		pos.y = (1 - pos.y / pos.w)*mHeight/2;
 		pos.z = pos.z / pos.w;
-		pos.w = inClipping ? 1.0f : -1.0f;
+		//pos.w = inClipping ? 1.0f : -1.0f;
 
 		return pos;
 	}
@@ -474,10 +474,10 @@ public:
 			Vector4 pt3 = screenPoints[i*4 + 2];
 			Vector4 pt4 = screenPoints[i*4 + 3];
 
-			pt1.u = 0; pt1.v = 0;
-			pt2.u = 1; pt2.v = 0;
-			pt3.u = 1; pt3.v = 1;
-			pt4.u = 0; pt4.v = 1;
+			pt1.u = 0 / pt1.w; pt1.v = 0 / pt1.w;
+			pt2.u = 1 / pt2.w; pt2.v = 0 / pt2.w;
+			pt3.u = 1 / pt3.w; pt3.v = 1 / pt3.w;
+			pt4.u = 0 / pt4.w; pt4.v = 1 / pt4.w;
 
 			trianglePoints.push_back(pt1);
 			trianglePoints.push_back(pt2);
@@ -508,7 +508,7 @@ public:
 		{
 			for (int i = 0; i < trianglePoints.size() / 3; i++)
 			{
-				//裁剪只做简单做丢弃
+				//裁剪只简单做丢弃
 				//if (trianglePoints[i * 3].w < 0) continue;
 				//if (trianglePoints[i * 3 + 1].w < 0) continue;
 				//if (trianglePoints[i * 3 + 2].w < 0) continue;
@@ -659,12 +659,12 @@ private:
 		float ySlope = (leftPoint.y - rightPoint.y) / (leftPoint.x - rightPoint.x);
 		float zSlope = (leftPoint.z - rightPoint.z) / (leftPoint.x - rightPoint.x);
 		float xRate = (x - leftPoint.x) / (rightPoint.x - leftPoint.x);
-		point.w = 1;
+		point.w = 1/((1-xRate)/leftPoint.w + xRate/rightPoint.w);
 		point.x = x;
 		point.y = ySlope * (x - rightPoint.x) + rightPoint.y;
-		point.z = (leftPoint.z - rightPoint.z) * x / (leftPoint.x - rightPoint.x);
-		point.u = Math::Interpolate3D(leftPoint.u, leftPoint.z, rightPoint.u, rightPoint.z, xRate);
-		point.v = Math::Interpolate3D(leftPoint.v, leftPoint.z, rightPoint.v, rightPoint.z, xRate);
+		point.z = 1 / ((1 - xRate) / leftPoint.z + xRate / rightPoint.z);
+		point.u = Math::Interpolate(leftPoint.u, rightPoint.u, xRate)*point.w;
+		point.v = Math::Interpolate(leftPoint.v, rightPoint.v, xRate)*point.w;
 
 		return point;
 	}
@@ -715,12 +715,12 @@ static float verticeArray[] =
 
 static int indiceArray[] =
 {
-	//0, 1, 2, 3,		//bottom
-	//4, 5, 6, 7,		//top
-	//0, 1, 5, 4,		//back
-	//3, 2, 6, 7,		//front
+	0, 1, 2, 3,		//bottom
+	4, 5, 6, 7,		//top
+	0, 1, 5, 4,		//back
+	3, 2, 6, 7,		//front
 	1, 2, 6, 5,		//left
-	//0, 3, 7, 4,		//right
+	0, 3, 7, 4,		//right
 };
 
 #pragma endregion
