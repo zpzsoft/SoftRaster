@@ -432,7 +432,6 @@ public:
 		pos.x = (pos.x /pos.w + 1)*mWidth/2;
 		pos.y = (1 - pos.y / pos.w)*mHeight/2;
 		pos.z = pos.z / pos.w;
-		//pos.w = inClipping ? 1.0f : -1.0f;
 
 		return pos;
 	}
@@ -613,26 +612,26 @@ private:
 		}
 		else
 		{
-			bool goX = abs(start.x - start.x) > abs(start.y - end.y);
-			float slope = (start.y - end.y) / (start.x - end.x);
-			int minValue = goX ? min(start.x, end.x) : min(start.y, end.y);
-			int maxValue = goX ? max(start.x, end.x) : max(start.y, end.y);
-			
-			
-			for (int val = minValue; val < maxValue; val++)
-			{
-				if (readTexture)
-				{
-					float u = Math::Interpolate3D(start.u, start.z, end.u, end.z, (val - start.x) / (end.x - start.x));
-					float v = Math::Interpolate3D(start.v, start.z, end.v, end.z, (val - start.x) / (end.x - start.x));
-					GetTexturePixel(u, v, pixelColor);
-				}
+			//bool goX = abs(start.x - start.x) > abs(start.y - end.y);
+			//float slope = (start.y - end.y) / (start.x - end.x);
+			//int minValue = goX ? min(start.x, end.x) : min(start.y, end.y);
+			//int maxValue = goX ? max(start.x, end.x) : max(start.y, end.y);
+			//
+			//
+			//for (int val = minValue; val < maxValue; val++)
+			//{
+			//	if (readTexture)
+			//	{
+			//		float u = Math::Interpolate3D(start.u, start.z, end.u, end.z, (val - start.x) / (end.x - start.x));
+			//		float v = Math::Interpolate3D(start.v, start.z, end.v, end.z, (val - start.x) / (end.x - start.x));
+			//		GetTexturePixel(u, v, pixelColor);
+			//	}
 
-				if (goX)
-					SetPiexel(val, slope * (val - start.x) + start.y, Math::Interpolate(start.z, end.z, (val - start.x) / (end.x - start.x)), pixelColor);
-				else
-					SetPiexel((val - start.y) / slope + start.x, val, Math::Interpolate(start.z, end.z, (val - start.y) / (end.y - start.y)), pixelColor);
-			}
+			//	if (goX)
+			//		SetPiexel(val, slope * (val - start.x) + start.y, Math::Interpolate(start.z, end.z, (val - start.x) / (end.x - start.x)), pixelColor);
+			//	else
+			//		SetPiexel((val - start.y) / slope + start.x, val, Math::Interpolate(start.z, end.z, (val - start.y) / (end.y - start.y)), pixelColor);
+			//}
 		}
 	}
 
@@ -685,9 +684,21 @@ private:
 		else if (line3Pt.w < 0) { scanStart = line1Pt; scanEnd = line2Pt; }
 		else
 		{
-			scanStart.x = scanEnd.x = x;
-			scanStart.y = min(line1Pt.y, min(line2Pt.y, line3Pt.y));
-			scanEnd.y = max(line1Pt.y, max(line2Pt.y, line3Pt.y));
+			if (line1Pt.y == line2Pt.y)
+			{
+				scanStart = line1Pt;
+				scanEnd = line3Pt;
+			}
+			else if (line2Pt.y == line3Pt.y)
+			{
+				scanStart = line1Pt;
+				scanEnd = line2Pt;
+			}
+			else
+			{
+				scanStart = line2Pt;
+				scanEnd = line3Pt;
+			}
 		}
 		
 		return true;
@@ -700,17 +711,16 @@ static float xMoveDelta = 0, yMoveDelta = 0, zMoveDelta = 0;
 static float xRotateDelta = 0, yRotateDelta = 0, zRotateDelta = 0;
 static Device* device = NULL;
 static Transform transform;
-static float delta = 1.5f;
 static float verticeArray[] =
 {
 	0, 0, 0,
-	delta, 0, 0,
-	delta, 0, delta,
-	0, 0, delta,
-	0, delta, 0,
-	delta, delta, 0,
-	delta, delta, delta,
-	0, delta, delta,
+	1, 0, 0,
+	1, 0, 1,
+	0, 0, 1,
+	0, 1, 0,
+	1, 1, 0,
+	1, 1, 1,
+	0, 1, 1,
 };
 
 static int indiceArray[] =
@@ -815,7 +825,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PSTR sZCmdLine,
 		return 0;
 	}
 
-	hwnd = CreateWindow(sZAppName, sZAppName, WS_OVERLAPPEDWINDOW, 
+	hwnd = CreateWindow(sZAppName, sZAppName, WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX,
 		0, GetSystemMetrics(SM_CYSCREEN) - SCREEN_HEIGHT,
 		SCREEN_WIDTH, SCREEN_HEIGHT,NULL, NULL, hInstance, NULL);
 
