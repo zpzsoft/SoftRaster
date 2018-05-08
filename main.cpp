@@ -27,6 +27,10 @@
 					https://en.wikipedia.org/wiki/Texture_mapping#Perspective_correctness
 					https://stackoverflow.com/questions/2068134/perspective-correct-texture-mapping-z-distance-calculation-might-be-wrong
 					http://archive.gamedev.net/archive/reference/articles/article331.html
+					http://www.lysator.liu.se/~mikaelk/doc/perspectivetexture/
+					http://blog.csdn.net/aceyan0718/article/details/51659381
+					http://www.cnblogs.com/ArenAK/archive/2008/03/13/1103532.html
+					http://blog.csdn.net/popy007/article/details/5570803
 *
 * ----------------------------------------------------------------------------------------------------------------- */
 #include <windows.h>
@@ -335,7 +339,6 @@ public:
 		mTarget = target;
 		mUp = up;
 
-		//TODO:这里的顺序需要求证.
 		Vector4 z = mTarget - mPosition;
 		z = z.Normalize();
 
@@ -609,29 +612,6 @@ private:
 				}
 				SetPiexel(x, start.y, Math::Interpolate(start.z, end.z, (x - start.x) / (end.x - start.x)), pixelColor);
 			}
-		}
-		else
-		{
-			//bool goX = abs(start.x - start.x) > abs(start.y - end.y);
-			//float slope = (start.y - end.y) / (start.x - end.x);
-			//int minValue = goX ? min(start.x, end.x) : min(start.y, end.y);
-			//int maxValue = goX ? max(start.x, end.x) : max(start.y, end.y);
-			//
-			//
-			//for (int val = minValue; val < maxValue; val++)
-			//{
-			//	if (readTexture)
-			//	{
-			//		float u = Math::Interpolate3D(start.u, start.z, end.u, end.z, (val - start.x) / (end.x - start.x));
-			//		float v = Math::Interpolate3D(start.v, start.z, end.v, end.z, (val - start.x) / (end.x - start.x));
-			//		GetTexturePixel(u, v, pixelColor);
-			//	}
-
-			//	if (goX)
-			//		SetPiexel(val, slope * (val - start.x) + start.y, Math::Interpolate(start.z, end.z, (val - start.x) / (end.x - start.x)), pixelColor);
-			//	else
-			//		SetPiexel((val - start.y) / slope + start.x, val, Math::Interpolate(start.z, end.z, (val - start.y) / (end.y - start.y)), pixelColor);
-			//}
 		}
 	}
 
